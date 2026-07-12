@@ -42,7 +42,7 @@ def scrape_and_save(product_name):
     print(f"Scraping Flipkart for: {product_name}")
     print(f"{'='*50}\n")
 
-    raw_reviews = scrape_flipkart_reviews(product_name)
+    raw_reviews, real_title, image_url, specs = scrape_amazon_reviews(product_name)
 
     if not raw_reviews:
         print("[ERROR] No reviews scraped. Try a different product name.")

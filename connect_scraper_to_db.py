@@ -33,7 +33,7 @@ def scrape_and_save(product_name):
     print(f"Scraping Amazon for: {product_name}")
     print(f"{'='*50}\n")
 
-    raw_reviews = scrape_amazon_reviews(product_name)
+    raw_reviews, real_title, image_url, specs = scrape_amazon_reviews(product_name)
 
     if not raw_reviews:
         print("[ERROR] No reviews scraped. Try a different product name.")
@@ -61,7 +61,9 @@ def scrape_and_save(product_name):
         title=raw_reviews[0]["product_name"],
         price="N/A",
         overall_rating="N/A",
-        total_reviews=str(len(processed_reviews))
+        total_reviews=str(len(processed_reviews)),
+        image_url=image_url,
+        specs=specs
     )
 
     if not product_id:
@@ -80,6 +82,8 @@ def scrape_and_save(product_name):
         print(f"   Product: {product_name}")
         print(f"   Total reviews: {len(processed_reviews)}")
         print(f"   Positive: {pos} | Negative: {neg} | Neutral: {neu}")
+        print(f"   Image URL: {image_url}")
+        print(f"   Specs: {specs}")
         print(f"{'='*50}\n")
         return True
 

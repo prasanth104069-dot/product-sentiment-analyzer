@@ -30,7 +30,7 @@ const ProductSearch = () => {
       fetch(`http://127.0.0.1:8000/api/products?search=${query}`)
         .then(res => res.json())
         .then(data => {
-          setProducts(data.reviews || []);
+          setProducts(data.summary || []);
           setLoading(false);
         })
         .catch(err => {
@@ -177,49 +177,73 @@ const ProductSearch = () => {
 
           {!loading && products.length > 0 ? (
             products.map((p) => (
-              <div
-                key={p.id}
-                className="glass-card rounded-3xl overflow-hidden hover:translate-y-[-4px] hover:shadow-xl transition-all duration-300 flex flex-col group bg-white/70 p-6"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <span className={`text-white px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider shadow-lg ${
-                    p.sentiment === 'Negative' ? 'bg-error' : p.sentiment === 'Neutral' ? 'bg-secondary' : 'bg-primary'
-                  }`}>
-                    {p.sentiment}
-                  </span>
-                  <span className="font-bold text-[9px] uppercase tracking-wider text-secondary bg-secondary/10 px-2 py-0.5 rounded-full">
-                    {p.source}
-                  </span>
-                </div>
+  <div
+    key={p.id}
+    className="glass-card rounded-3xl overflow-hidden hover:translate-y-[-4px] hover:shadow-xl transition-all duration-300 flex flex-col group bg-white/70"
+  >
+    <div className="w-full h-40 bg-surface-container overflow-hidden flex items-center justify-center">
+      {p.image_url && p.image_url !== "N/A" ? (
+        <img
+          src={p.image_url}
+          alt={p.title || p.name}
+          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+      ) : (
+        <span className="material-symbols-outlined text-5xl text-outline">image_not_supported</span>
+      )}
+    </div>
 
-                <h3 className="font-bold text-lg text-on-surface leading-snug mb-2 group-hover:text-primary transition-colors">
-                  {p.review_title || p.product_name}
-                </h3>
+    <div className="p-6 flex flex-col flex-grow">
+      <div className="flex justify-between items-start mb-3">
+        <span className={`text-white px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider shadow-lg ${
+          p.badgeType === 'negative' ? 'bg-error' : p.badgeType === 'trending' ? 'bg-secondary' : 'bg-primary'
+        }`}>
+          {p.badge}
+        </span>
+        <span className="font-bold text-[9px] uppercase tracking-wider text-secondary bg-secondary/10 px-2 py-0.5 rounded-full">
+          {p.source}
+        </span>
+      </div>
 
-                <p className="text-sm text-on-surface-variant mb-4 line-clamp-3">
-                  {p.review_body}
-                </p>
+      <h3 className="font-bold text-lg text-on-surface leading-snug mb-2 group-hover:text-primary transition-colors line-clamp-2">
+        {p.title || p.name}
+      </h3>
 
-                <div className="flex justify-between items-center mt-auto pt-4 border-t border-white/20">
-                  <div>
-                    <span className="text-[10px] text-outline font-semibold">Rating</span>
-                    <p className="font-bold text-on-surface text-sm">{p.review_rating}</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-outline font-semibold">Score</span>
-                    <p className={`font-bold text-sm ${p.sentiment_score > 0 ? 'text-primary' : 'text-error'}`}>
-                      {p.sentiment_score > 0 ? '+' : ''}{p.sentiment_score}
-                    </p>
-                  </div>
-                  <span className="text-[10px] text-outline">{p.review_date}</span>
-                </div>
-              </div>
-            ))
-          ) : !loading && query ? (
-            <div className="col-span-full py-16 flex flex-col items-center justify-center text-center">
-              <span className="material-symbols-outlined text-5xl text-outline mb-4">search_off</span>
-              <h3 className="text-xl font-bold text-on-surface mb-2">No Products Found</h3>
-              <p className="text-sm text-on-surface-variant max-w-md">
+      {p.specs && Object.keys(p.specs).length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {Object.entries(p.specs).slice(0, 3).map(([key, value]) => (
+            <span key={key} className="text-[10px] bg-surface-container px-2 py-1 rounded-md text-on-surface-variant">
+              {key}: {value}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex justify-between items-center mt-auto pt-4 border-t border-white/20">
+        <div>
+          <span className="text-[10px] text-outline font-semibold">Rating</span>
+          <p className="font-bold text-on-surface text-sm">{p.rating}</p>
+        </div>
+        <div>
+          <span className="text-[10px] text-outline font-semibold">Reviews</span>
+          <p className="font-bold text-on-surface text-sm">{p.reviews}</p>
+        </div>
+        <div>
+          <span className="text-[10px] text-outline font-semibold">Positive</span>
+          <p className="font-bold text-primary text-sm">{p.positive}%</p>
+        </div>
+      </div>
+    </div>
+  </div>
+))
+          
+
+  ) : !loading && query ? (
+      <div className="col-span-full py-16 flex flex-col items-center justify-center text-center">
+       <span className="material-symbols-outlined text-5xl text-outline mb-4">search_off</span>
+        <h3 className="text-xl font-bold text-on-surface mb-2">No Products Found</h3>
+        <p className="text-sm text-on-surface-variant max-w-md">
                 We couldn't find any products matching "{query}". Try adjusting your filters or search keywords.
               </p>
             </div>

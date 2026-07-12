@@ -35,6 +35,37 @@ def scrape_amazon_reviews(search_term):
         product_name = search_term
     print("Product:", product_name)
 
+    # 1) PRODUCT IMAGE
+    image_url = "N/A"
+    try:
+        img_tag = soup.select_one("#imgTagWrapperId img") or soup.select_one("#landingImage")
+        if img_tag:
+            # Amazon sometimes hides the real high-res URL in data-old-hires
+            image_url = img_tag.get("data-old-hires") or img_tag.get("src") or "N/A"
+    except Exception:
+        pass
+    print("Image URL:", image_url)
+
+    # 2) BASIC SPECS (battery, display, RAM, etc. — varies by product category)
+    specs = {}
+    try:
+        spec_table = soup.select_one("#productDetails_techSpec_section_1") \
+                     or soup.select_one("#detailBullets_feature_div") \
+                     or soup.select_one("#poExpander")
+        if spec_table:
+            rows = spec_table.select("tr")
+            for row in rows:
+                key_el = row.select_one("th") or row.select_one(".a-text-bold")
+                val_el = row.select_one("td")
+                if key_el and val_el:
+                    key = key_el.get_text(strip=True)
+                    val = val_el.get_text(strip=True)
+                    if key and val:
+                        specs[key] = val
+    except Exception:
+        pass
+    print("Specs found:", specs)
+
     # Scroll all the way down so lazy-loaded sections render
     for _ in range(15):
         driver.execute_script("window.scrollBy(0, 600);")
@@ -61,11 +92,13 @@ def scrape_amazon_reviews(search_term):
                     all_reviews.append({"product_name": product_name, "review_text": text})
 
     driver.quit()
-    return all_reviews
+    return all_reviews, product_name, image_url, specs
 
 
 if __name__ == "__main__":
-    reviews = scrape_amazon_reviews("laptop")
+    reviews, name, image_url, specs = scrape_amazon_reviews("laptop")
+    print("Image:", image_url)
+    print("Specs:", specs)
     if reviews:
         df = pd.DataFrame(reviews)
         df.to_csv("amazon_reviews.csv", index=False)

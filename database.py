@@ -4,6 +4,7 @@
 # Team 4 — Database
 
 import os
+import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
@@ -63,9 +64,15 @@ def create_tables():
                 price           VARCHAR(50),
                 overall_rating  VARCHAR(20),
                 total_reviews   VARCHAR(50),
+                image_url       TEXT,               -- NEW: product image URL
+                specs           JSONB,               -- NEW: battery, display, RAM, etc.
                 scraped_at      TIMESTAMP DEFAULT NOW()
             );
         """)
+
+        # In case the table already existed before this update, add columns safely
+        cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;")
+        cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS specs JSONB;")
 
         # Reviews table
         cur.execute("""
@@ -100,11 +107,18 @@ def create_tables():
 #  SAVE PRODUCT
 # ──────────────────────────────────────────────
 
-def save_product(product_name, source, title, price, overall_rating, total_reviews):
+def save_product(product_name, source, title, price, overall_rating, total_reviews,
+                  image_url="N/A", specs=None):
     """
     Save product info to database.
     Returns product_id for linking reviews.
+
+    image_url: string URL of the product image (optional)
+    specs: dict of spec key/value pairs, e.g. {"Battery": "4000 mAh"} (optional)
     """
+    if specs is None:
+        specs = {}
+
     conn = get_connection()
     if not conn:
         return None
@@ -121,14 +135,23 @@ def save_product(product_name, source, title, price, overall_rating, total_revie
         existing = cur.fetchone()
         if existing:
             print(f"[DB] Product already exists, ID: {existing[0]}")
+            # Keep image/specs fresh even on repeat scrapes
+            cur.execute("""
+                UPDATE products
+                SET image_url = %s, specs = %s
+                WHERE id = %s
+            """, (image_url, json.dumps(specs), existing[0]))
+            conn.commit()
             return existing[0]
 
         # Insert new product
         cur.execute("""
-            INSERT INTO products (product_name, source, title, price, overall_rating, total_reviews)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO products
+                (product_name, source, title, price, overall_rating, total_reviews, image_url, specs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        """, (product_name, source, title, price, overall_rating, total_reviews))
+        """, (product_name, source, title, price, overall_rating, total_reviews,
+              image_url, json.dumps(specs)))
 
         product_id = cur.fetchone()[0]
         conn.commit()
@@ -320,73 +343,6 @@ def get_all_products():
 
 
 # ──────────────────────────────────────────────
-#  GET PRODUCTS SUMMARY (grouped, for Product Feed)
-# ──────────────────────────────────────────────
-
-def get_products_summary(search_term=""):
-    """
-    Returns product-level summary (not individual reviews).
-    Groups by product_name and calculates sentiment %.
-    """
-    conn = get_connection()
-    if not conn:
-        return []
-
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        cur.execute("""
-            SELECT 
-                p.id,
-                p.product_name,
-                p.source,
-                p.title,
-                p.price,
-                p.overall_rating,
-                p.total_reviews,
-                COUNT(r.id) as review_count,
-                SUM(CASE WHEN r.sentiment = 'Positive' THEN 1 ELSE 0 END) as positive_count,
-                SUM(CASE WHEN r.sentiment = 'Negative' THEN 1 ELSE 0 END) as negative_count,
-                SUM(CASE WHEN r.sentiment = 'Neutral' THEN 1 ELSE 0 END) as neutral_count
-            FROM products p
-            LEFT JOIN reviews r ON p.id = r.product_id
-            WHERE p.product_name ILIKE %s
-            GROUP BY p.id, p.product_name, p.source, p.title, p.price, p.overall_rating, p.total_reviews
-            ORDER BY p.scraped_at DESC
-        """, (f"%{search_term}%",))
-
-        products = cur.fetchall()
-
-        result = []
-        for p in products:
-            total = p['review_count'] or 1
-            positive_pct = round((p['positive_count'] / total) * 100)
-
-            result.append({
-                "id": p['id'],
-                "name": p['product_name'],
-                "source": p['source'],
-                "title": p['title'],
-                "price": p['price'],
-                "rating": p['overall_rating'],
-                "reviews": p['review_count'],
-                "positive": positive_pct,
-                "badge": f"{positive_pct}% Positive",
-                "badgeType": "positive" if positive_pct >= 60 else "negative" if positive_pct < 40 else "trending"
-            })
-
-        return result
-
-    except Exception as e:
-        print(f"[DB] Error fetching product summary ❌: {e}")
-        return []
-
-    finally:
-        cur.close()
-        conn.close()
-
-
-# ──────────────────────────────────────────────
 #  MAIN FUNCTION — Called by Backend/Scraper
 # ──────────────────────────────────────────────
 
@@ -401,7 +357,9 @@ def save_scraped_data(scraped_data, sentiment_results):
             "title": "Apple iPhone 15",
             "price": "₹69,999",
             "overall_rating": "4.2 out of 5",
-            "total_ratings": "15,420"
+            "total_ratings": "15,420",
+            "image_url": "https://...",
+            "specs": {"Battery": "4000 mAh", "Refresh Rate": "120Hz"}
         },
         "reviews": [...]
     }
@@ -423,7 +381,9 @@ def save_scraped_data(scraped_data, sentiment_results):
         title         = info.get("title", ""),
         price         = info.get("price", ""),
         overall_rating= info.get("overall_rating", ""),
-        total_reviews = info.get("total_ratings", "")
+        total_reviews = info.get("total_ratings", ""),
+        image_url     = info.get("image_url", "N/A"),
+        specs         = info.get("specs", {})
     )
 
     if not product_id:
@@ -437,6 +397,54 @@ def save_scraped_data(scraped_data, sentiment_results):
 
     # Save reviews
     return save_reviews(product_id, product_name, source, reviews)
+
+
+# ──────────────────────────────────────────────
+#  GET PRODUCTS SUMMARY (used by /api/products)
+# ──────────────────────────────────────────────
+
+def get_products_summary(search_term=""):
+    conn = get_connection()
+    if not conn:
+        return []
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT 
+                p.id, p.product_name, p.source, p.title, p.price,
+                p.overall_rating, p.total_reviews, p.image_url, p.specs,
+                COUNT(r.id) as review_count,
+                SUM(CASE WHEN r.sentiment = 'Positive' THEN 1 ELSE 0 END) as positive_count,
+                SUM(CASE WHEN r.sentiment = 'Negative' THEN 1 ELSE 0 END) as negative_count,
+                SUM(CASE WHEN r.sentiment = 'Neutral' THEN 1 ELSE 0 END) as neutral_count
+            FROM products p
+            LEFT JOIN reviews r ON p.id = r.product_id
+            WHERE p.product_name ILIKE %s
+            GROUP BY p.id, p.product_name, p.source, p.title, p.price, p.overall_rating,
+                     p.total_reviews, p.image_url, p.specs
+            ORDER BY p.scraped_at DESC
+        """, (f"%{search_term}%",))
+        products = cur.fetchall()
+        result = []
+        for p in products:
+            total = p['review_count'] or 1
+            positive_pct = round((p['positive_count'] / total) * 100)
+            result.append({
+                "id": p['id'], "name": p['product_name'], "source": p['source'],
+                "title": p['title'], "price": p['price'], "rating": p['overall_rating'],
+                "reviews": p['review_count'], "positive": positive_pct,
+                "image_url": p['image_url'] or "N/A",   # NEW
+                "specs": p['specs'] or {},                # NEW
+                "badge": f"{positive_pct}% Positive",
+                "badgeType": "positive" if positive_pct >= 60 else "negative" if positive_pct < 40 else "trending"
+            })
+        return result
+    except Exception as e:
+        print(f"[DB] Error fetching product summary: {e}")
+        return []
+    finally:
+        cur.close()
+        conn.close()
 
 
 # ──────────────────────────────────────────────
@@ -456,7 +464,9 @@ if __name__ == "__main__":
         title          = "Apple iPhone 15 128GB",
         price          = "₹69,999",
         overall_rating = "4.2 out of 5",
-        total_reviews  = "15,420"
+        total_reviews  = "15,420",
+        image_url      = "https://example.com/iphone15.jpg",
+        specs          = {"Battery": "3349 mAh", "Display": "6.1 inch OLED"}
     )
 
     # Step 3 — Save test reviews
